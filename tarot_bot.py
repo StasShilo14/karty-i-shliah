@@ -126,7 +126,7 @@ user_lang: dict[int, str] = {}
 
 
 def get_lang(user_id: int) -> str:
-return user_lang.get(user_id, "uk")
+ return user_lang.get(user_id, "uk")
 
 
 def draw_cards(n: int):
