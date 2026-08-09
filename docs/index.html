@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Карти й Шлях</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: radial-gradient(ellipse at center, #1a1230 0%, #0a0614 100%);
+    color: #f2e9d8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+  .wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px 40px; }
+  .stars { position: fixed; inset: 0; pointer-events: none; opacity: 0.5;
+    background-image: radial-gradient(1px 1px at 20px 30px, #fff, transparent),
+                       radial-gradient(1px 1px at 60px 80px, #fff, transparent),
+                       radial-gradient(1px 1px at 100px 40px, #fff, transparent),
+                       radial-gradient(1px 1px at 140px 90px, #fff, transparent),
+                       radial-gradient(1px 1px at 180px 20px, #fff, transparent),
+                       radial-gradient(1px 1px at 220px 60px, #fff, transparent);
+    background-repeat: repeat; background-size: 240px 120px;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 8px 0 4px; text-align: center; color: #f2e9d8; }
+  .subtitle { font-size: 14px; color: #c9b8e0; text-align: center; margin-bottom: 4px; }
+  .counter { font-size: 13px; color: #d4af37; margin-bottom: 22px; letter-spacing: 0.5px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; width: 100%; max-width: 360px; }
+  .card { position: relative; aspect-ratio: 2 / 3; perspective: 800px; cursor: pointer; }
+  .card-inner {
+    position: relative; width: 100%; height: 100%;
+    transition: transform 0.6s cubic-bezier(.4,.2,.2,1);
+    transform-style: preserve-3d;
+  }
+  .card.flipped .card-inner { transform: rotateY(180deg); }
+  .card-face {
+    position: absolute; inset: 0; backface-visibility: hidden;
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  }
+  .card-back {
+    background: linear-gradient(145deg, #241a3d, #150d28);
+    border: 1.5px solid #6a4fa0;
+  }
+  .card-back::after {
+    content: "✦"; font-size: 22px; color: #a98bd6;
+  }
+  .card-front {
+    background: linear-gradient(145deg, #3a2a10, #1c1406);
+    border: 1.5px solid #d4af37;
+    transform: rotateY(180deg);
+    font-size: 26px;
+  }
+  .card.disabled { pointer-events: none; opacity: 0.55; }
+  .card:active .card-inner:not(.locked) { transform: scale(0.96); }
+  .hint { margin-top: 26px; font-size: 12.5px; color: #8b7fa8; text-align: center; max-width: 300px; }
+  .done-msg { margin-top: 18px; font-size: 14px; color: #d4af37; text-align: center; opacity: 0; transition: opacity 0.3s; }
+  .done-msg.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="wrap">
+  <h1>🔮 Карти й Шлях</h1>
+  <div class="subtitle" id="titleText">Обери карти, які тебе притягують</div>
+  <div class="counter" id="counter">Обрано 0 з 0</div>
+  <div class="grid" id="grid"></div>
+  <div class="done-msg" id="doneMsg">✨ Карти обрано — повертайся у чат</div>
+  <div class="hint">Довірся першому враженню. Карта, на яку хочеться натиснути — вже твоя відповідь.</div>
+</div>
+
+<script>
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.expand(); tg.ready(); }
+
+  const params = new URLSearchParams(window.location.search);
+  const needed = parseInt(params.get("n") || "1", 10);
+  const gridSize = parseInt(params.get("grid") || "5", 10);
+  const title = params.get("title");
+  const lang = params.get("lang") || "uk";
+
+  const TEXT = {
+    uk: { subtitle: "Обери карти, які тебе притягують", counter: (a,b) => `Обрано ${a} з ${b}`, done: "✨ Карти обрано — повертайся у чат" },
+    en: { subtitle: "Choose the cards that draw you in", counter: (a,b) => `Chosen ${a} of ${b}`, done: "✨ Cards chosen — return to the chat" },
+    es: { subtitle: "Elige las cartas que te atraen", counter: (a,b) => `Elegidas ${a} de ${b}`, done: "✨ Cartas elegidas — vuelve al chat" },
+  }[lang] || TEXT_FALLBACK();
+  function TEXT_FALLBACK(){ return { subtitle: "Обери карти, які тебе притягують", counter: (a,b)=>`Обрано ${a} з ${b}`, done: "✨ Карти обрано — повертайся у чат" }; }
+
+  document.getElementById("titleText").textContent = title ? decodeURIComponent(title) : TEXT.subtitle;
+  document.getElementById("doneMsg").textContent = TEXT.done;
+
+  const gridEl = document.getElementById("grid");
+  const counterEl = document.getElementById("counter");
+  const picks = [];
+
+  function updateCounter() {
+    counterEl.textContent = TEXT.counter(picks.length, needed);
+  }
+  updateCounter();
+
+  for (let i = 0; i < gridSize; i++) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-inner">
+        <div class="card-face card-back"></div>
+        <div class="card-face card-front">✨</div>
+      </div>`;
+    card.addEventListener("click", () => onPick(card, i));
+    gridEl.appendChild(card);
+  }
+
+  function onPick(card, index) {
+    if (card.classList.contains("flipped") || picks.length >= needed) return;
+    card.classList.add("flipped");
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    picks.push(index);
+    updateCounter();
+
+    if (picks.length >= needed) {
+      document.querySelectorAll(".card:not(.flipped)").forEach(c => c.classList.add("disabled"));
+      setTimeout(() => {
+        document.getElementById("doneMsg").classList.add("show");
+        if (tg) {
+          tg.sendData(JSON.stringify({ picks }));
+          setTimeout(() => tg.close(), 650);
+        }
+      }, 500);
+    }
+  }
+</script>
+</body>
+</html>
